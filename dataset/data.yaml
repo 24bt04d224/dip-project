@@ -1,0 +1,8 @@
+# Dataset configuration for License Plate Detection
+path: ../dataset # dataset root dir
+train: images/train # train images (relative to 'path') 
+val: images/val # val images (relative to 'path')
+
+# Classes
+names:
+  0: license_plate

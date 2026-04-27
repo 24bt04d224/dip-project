@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+
+# Node / React
+node_modules/
+dist/
+.eslintcache
+
+# Project Specific
+data/db/
+mongodb_data/
+*.mp4
+*.pptx
+*.png
+*.jpg
+*.jpeg
+
+# Model Weights (optional - remove if you want to push them)
+# model/best.pt
+# yolov8n.pt
