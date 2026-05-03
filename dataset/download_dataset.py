@@ -27,8 +27,8 @@ def download_and_prepare_dataset():
         os.makedirs(images_dir, exist_ok=True)
         os.makedirs(labels_dir, exist_ok=True)
 
-        # Process first 50 images per split to keep it fast
-        max_images = 50 
+        # Process first 150 images per split for better accuracy
+        max_images = 150 
         
         for i in tqdm(range(min(len(split_data), max_images)), desc=f"Processing {split_name}"):
             item = split_data[i]

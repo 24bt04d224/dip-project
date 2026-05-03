@@ -54,11 +54,18 @@ def validate_plate(text):
     return False, clean
 
 # TTS Setup
-engine = pyttsx3.init()
 def speak(text):
     def _run():
-        engine.say(f"Plate detected {text}")
-        engine.runAndWait()
+        try:
+            # Initialize engine inside the thread to avoid COM/threading issues
+            local_engine = pyttsx3.init()
+            local_engine.say(f"Plate detected {text}")
+            local_engine.runAndWait()
+            # Clean up the engine instance
+            local_engine.stop()
+        except Exception as e:
+            print(f"TTS Error: {e}")
+            
     threading.Thread(target=_run, daemon=True).start()
 
 def preprocess(img):
@@ -67,15 +74,28 @@ def preprocess(img):
     return gray
 
 def run_pipeline():
-    cap = cv2.VideoCapture(0)
+    # Try different backends and indices if 0 fails
+    print("Opening camera...")
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    
+    if not cap.isOpened():
+        print("Warning: Camera index 0 with DSHOW failed. Trying index 0 default...")
+        cap = cv2.VideoCapture(0)
+    
+    if not cap.isOpened():
+        print("Error: Could not open camera. Please check if your webcam is connected or used by another app.")
+        return
+
     last_detected = {}
     COOLDOWN = 60
     
-    print("AI Surveillance Active...")
+    print("AI Surveillance Active... (Press 'q' to quit)")
 
     while cap.isOpened():
         ret, frame = cap.read()
-        if not ret: break
+        if not ret: 
+            print("Failed to grab frame")
+            break
 
         results = model(frame, verbose=False)[0]
         for box in results.boxes:
@@ -104,11 +124,14 @@ def run_pipeline():
                     
                     curr = time.time()
                     if plate not in last_detected or (curr - last_detected[plate] > COOLDOWN):
-                        requests.post(API_URL, json={
-                            "plate_number": plate,
-                            "confidence": ocr_conf,
-                            "type": p_type
-                        })
+                        try:
+                            requests.post(API_URL, json={
+                                "plate_number": plate,
+                                "confidence": ocr_conf,
+                                "type": p_type
+                            }, timeout=1)
+                        except:
+                            pass
                         last_detected[plate] = curr
                         speak(plate)
 
@@ -119,5 +142,6 @@ def run_pipeline():
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
+    print("Loading models...")
     model = YOLO('yolov8n.pt')
     run_pipeline()

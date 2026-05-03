@@ -1,37 +1,48 @@
 from ultralytics import YOLO
 import os
+import torch
 
-def train_model():
-    # Load a pretrained model
+def train_properly():
+    # 1. Hardware Check
+    device = '0' if torch.cuda.is_available() else 'cpu'
+    print(f"--- Training on {device.upper()} ---")
+
+    # 2. Configuration
+    # Ensure paths are absolute for YOLO
+    root_dir = os.path.abspath('.')
+    data_yaml = os.path.join(root_dir, 'dataset', 'data_expert.yaml')
+    
+    # Create the expert data.yaml
+    with open(data_yaml, 'w') as f:
+        f.write(f"path: {os.path.join(root_dir, 'dataset', 'processed')}\n")
+        f.write("train: train/images\n")
+        f.write("val: val/images\n")
+        f.write("\nnames:\n  0: license_plate\n")
+
+    # 3. Load Model
+    # Use 'yolov8n.pt' for fast training, 'yolov8s.pt' for better accuracy
     model = YOLO('yolov8n.pt')
 
-    # Define path to dataset yaml file
-    # You should have a data.yaml file in your dataset folder
-    # Example format of data.yaml:
-    # path: ../dataset
-    # train: images/train
-    # val: images/val
-    # names:
-    #   0: license_plate
-    
-    yaml_path = os.path.abspath('dataset/data.yaml')
-
-    if not os.path.exists(yaml_path):
-        print(f"Error: {yaml_path} not found!")
-        print("Please download a dataset from Roboflow and place the data.yaml in the dataset folder.")
-        return
-
-    # Train the model
-    print("Starting training...")
+    # 4. Train with Expert Hyperparameters
+    print("--- Starting Expert Training ---")
     results = model.train(
-        data=yaml_path,
-        epochs=50,
-        imgsz=640,
-        batch=16,
-        name='vehicle_plate_detector'
+        data=data_yaml,
+        epochs=100,           # Increased for better convergence
+        imgsz=640,           # Standard high-quality size
+        batch=16,            # Adjust based on memory
+        patience=10,         # Early stopping if no improvement
+        save=True,           # Save checkpoints
+        device=device,
+        name='expert_plate_detector',
+        exist_ok=True,       # Overwrite existing run with same name
+        augment=True,        # Use data augmentation
+        lr0=0.01,            # Initial learning rate
+        lrf=0.01             # Final learning rate factor
     )
-    
-    print("Training complete. Model saved in runs/detect/vehicle_plate_detector/weights/best.pt")
+
+    print("\n--- Training Complete ---")
+    best_model_path = os.path.join('runs', 'detect', 'expert_plate_detector', 'weights', 'best.pt')
+    print(f"Best model saved at: {best_model_path}")
 
 if __name__ == "__main__":
-    train_model()
+    train_properly()

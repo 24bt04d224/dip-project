@@ -3,7 +3,7 @@ import axios from 'axios';
 import { 
   LayoutDashboard, Car, AlertCircle, Activity, Settings, LogOut, 
   Bell, Search, Clock, Zap, MoreHorizontal, ShieldAlert, CheckCircle2, 
-  XCircle, TrendingUp, Video, ChevronRight, BarChart2, Info, History, Monitor 
+  XCircle, TrendingUp, Video, ChevronRight, BarChart2, Info, History, Monitor, Eye 
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -23,31 +23,45 @@ function App() {
     ]
   });
   const [camIndex, setCamIndex] = useState(0);
+  const [currentView, setCurrentView] = useState("Dashboard");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [timeRange, setTimeRange] = useState("1HR");
 
-  const [lastAnnouncedPlate, setLastAnnouncedPlate] = useState("");
+  const spokenPlatesRef = React.useRef(new Set());
 
   const announcePlate = (log) => {
-    if (log.plate_number === lastAnnouncedPlate) return;
-    setLastAnnouncedPlate(log.plate_number);
+    if (!log || !log.plate_number) return;
+    const plate = log.plate_number.trim().toUpperCase();
+    
+    // Strict deduplication: only speak once per unique plate per session
+    if (spokenPlatesRef.current.has(plate)) return;
+    spokenPlatesRef.current.add(plate);
 
-    const last4 = log.plate_number.slice(-4).split('').join(' ');
-    const msg = new SpeechSynthesisUtterance();
-    msg.text = `Vehicle ${last4}. ${log.status}`;
-    msg.rate = 1.0;
-    window.speechSynthesis.speak(msg);
+    try {
+      const last4 = plate.slice(-4).split('').join(' ');
+      const msg = new SpeechSynthesisUtterance();
+      msg.text = `Vehicle ${last4}. ${log.status_text || 'Detected'}`;
+      msg.rate = 1.0;
+      window.speechSynthesis.speak(msg);
+    } catch (e) {
+      console.error("Audio Error:", e);
+    }
   };
 
   const fetchData = async () => {
     try {
+      const hoursMap = { "1HR": 1, "6HR": 6, "24HR": 24, "1MONTH": 720 };
+      const hours = hoursMap[timeRange];
       const [logsRes, statsRes] = await Promise.all([
-        axios.get(`${API_BASE}/logs`),
-        axios.get(`${API_BASE}/stats`)
+        axios.get(`${API_BASE}/logs?hours=${hours}`),
+        axios.get(`${API_BASE}/stats?hours=${hours}`)
       ]);
+      
       setLogs(logsRes.data);
       setStats(statsRes.data);
       
       // Announce the latest detection if it's new
-      if (logsRes.data.length > 0) {
+      if (logsRes.data && Array.isArray(logsRes.data) && logsRes.data.length > 0) {
         announcePlate(logsRes.data[0]);
       }
     } catch (err) { console.error("API Error:", err); }
@@ -55,8 +69,8 @@ function App() {
 
   useEffect(() => {
     fetchData();
-    const pollInterval = setInterval(fetchData, 5000); // Slower polling for stats
-
+    const interval = setInterval(fetchData, 5000);
+    
     // Real-time Event Listener for instant Audio
     const eventSource = new EventSource(`${API_BASE}/events`);
     eventSource.onmessage = (event) => {
@@ -66,38 +80,25 @@ function App() {
     };
 
     return () => {
-      clearInterval(pollInterval);
+      clearInterval(interval);
       eventSource.close();
     };
-  }, [lastAnnouncedPlate]);
+  }, [timeRange]); // Re-fetch when time range changes
 
   return (
     <div className="layout-wrapper">
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <Zap size={24} className="text-red" fill="currentColor" />
-          <span className="logo-text">SURVEIL<span className="logo-accent">AI</span></span>
+          <Eye size={24} className="text-red" fill="currentColor" />
+          <span className="logo-text">VIGIL<span className="logo-accent">EYE</span></span>
         </div>
         
         <nav className="nav-section">
-          <NavItem icon={<LayoutDashboard size={20}/>} label="Dashboard" active />
-          <NavItem icon={<Car size={20}/>} label="Vehicles" />
-          <NavItem icon={<AlertCircle size={20}/>} label="Alerts" />
-          <NavItem icon={<Activity size={20}/>} label="Analytics" />
-          <NavItem icon={<Settings size={20}/>} label="Settings" />
+          <NavItem icon={<LayoutDashboard size={20}/>} label="Dashboard" active={currentView === "Dashboard"} onClick={() => setCurrentView("Dashboard")} />
         </nav>
 
         <div className="sidebar-footer">
-          <NavItem icon={<LogOut size={20}/>} label="Logout" />
-          <div className="status-mini-card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-              <ShieldAlert className="text-green" size={18} />
-              <span style={{ fontSize: '12px', fontWeight: 800 }}>System Status</span>
-            </div>
-            <p style={{ fontSize: '11px', color: 'var(--accent-green)', fontWeight: 800 }}>All Systems Operational</p>
-            <p style={{ fontSize: '9px', color: 'var(--text-dim)', textTransform: 'uppercase', marginTop: '4px' }}>Updated: 10:30:45 AM</p>
-          </div>
         </div>
       </aside>
 
@@ -106,16 +107,23 @@ function App() {
         <header className="navbar">
           <div className="search-container">
             <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
-            <input type="text" placeholder="Search license plates, vehicles..." className="search-input" />
+            <input 
+              type="text" 
+              placeholder="Search license plates, vehicles..." 
+              className="search-input" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
           
           <div className="nav-actions">
-            <div style={{ position: 'relative', cursor: 'pointer' }}>
-              <Bell size={22} style={{ color: 'var(--text-muted)' }} />
-              <span style={{ position: 'absolute', top: '-6px', right: '-6px', background: 'var(--accent-red)', color: 'white', fontSize: '10px', fontWeight: 900, width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyCenter: 'center', borderRadius: '50%', border: '2px solid var(--bg-page)' }}>2</span>
-            </div>
-            <div className="badge-live">
-               <div className="dot-pulse" /> LIVE STREAM ACTIVE
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 900, color: 'white', letterSpacing: '0.05em' }}>
+                {new Date().toLocaleTimeString()}
+              </span>
+              <span style={{ fontSize: '9px', fontWeight: 800, color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+                {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </span>
             </div>
           </div>
         </header>
@@ -129,7 +137,7 @@ function App() {
           {/* Stats Grid */}
           <div className="stats-grid">
             <StatCard label="TOTAL VEHICLES" value={stats.total} icon={<Car size={22} />} colorClass="text-red" bgClass="bg-red-soft" />
-            <StatCard label="ACTIVE (1H)" value={stats.active} icon={<Activity size={22} />} colorClass="text-green" bgClass="bg-green-soft" />
+            <StatCard label={`ACTIVE (${timeRange.replace('HR', 'H').replace('1MONTH', '30D')})`} value={stats.active} icon={<Activity size={22} />} colorClass="text-green" bgClass="bg-green-soft" />
             <StatCard label="CRITICAL ALERTS" value={stats.alerts} icon={<AlertCircle size={22} />} colorClass="text-orange" bgClass="bg-orange-soft" />
             <StatCard label="UNKNOWN PLATES" value={stats.unknown} icon={<Info size={22} />} colorClass="text-blue" bgClass="bg-blue-soft" />
           </div>
@@ -140,9 +148,17 @@ function App() {
               <div className="panel">
                 <div className="panel-header">
                   <h2 className="panel-title"><History size={18} style={{ color: 'var(--text-dim)' }} /> Live Detection History</h2>
-                  <button style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '12px', padding: '8px 16px', fontSize: '10px', fontWeight: 900, color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    View All <ChevronRight size={14} />
-                  </button>
+                  <div className="time-filters" style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.03)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                    {["1HR", "6HR", "24HR", "1MONTH"].map(range => (
+                      <button 
+                        key={range}
+                        className={`filter-btn ${timeRange === range ? 'active' : ''}`}
+                        onClick={() => setTimeRange(range)}
+                      >
+                        {range}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div style={{ minHeight: '340px' }}>
                   <table className="data-table">
@@ -156,7 +172,15 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {logs.length > 0 ? logs.map((log, i) => (
+                      {logs.filter(log => 
+                        log.plate_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (log.owner_name && log.owner_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        log.type.toLowerCase().includes(searchQuery.toLowerCase())
+                      ).length > 0 ? logs.filter(log => 
+                        log.plate_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (log.owner_name && log.owner_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        log.type.toLowerCase().includes(searchQuery.toLowerCase())
+                      ).map((log, i) => (
                         <tr key={`${log.plate_number}-${log.timestamp}-${i}`}>
                           <td className="plate-cell">
                             {log.plate_number}
@@ -238,35 +262,36 @@ function App() {
               {/* System Status Panel */}
               <div className="panel" style={{ padding: '32px' }}>
                 <h3 className="panel-title" style={{ marginBottom: '32px' }}><Monitor size={18} style={{ color: 'var(--text-dim)' }} /> System Status</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr', gap: '24px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)' }}>CCTV Feed</span>
-                      <button 
-                        onClick={() => setCamIndex((prev) => (prev + 1) % 4)}
-                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '8px', padding: '4px 10px', fontSize: '9px', fontWeight: 900, color: 'white', cursor: 'pointer' }}
-                      >
-                        Switch (CAM {camIndex})
-                      </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Live CCTV Network (High Definition)</span>
                     </div>
-                    <div style={{ aspectRatio: '1/1', background: '#0c0c0e', borderRadius: '24px', border: '1px solid var(--border)', overflow: 'hidden', position: 'relative' }}>
-                      <img 
-                        src={`${API_BASE}/video_feed?index=${camIndex}`} 
-                        alt="Stream" 
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-                      />
-                      <div style={{ display: 'none', position: 'absolute', inset: 0, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.02)' }}>
-                        <Video size={32} style={{ color: 'var(--text-dim)', marginBottom: '12px' }} />
-                        <p style={{ fontSize: '9px', fontWeight: 900, color: 'var(--text-dim)', letterSpacing: '0.1em' }}>STREAM OFFLINE</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
+                      {/* MAIN GATE CAM */}
+                      <div style={{ aspectRatio: '16/9', background: '#0c0c0e', borderRadius: '24px', border: '1px solid var(--border)', overflow: 'hidden', position: 'relative', boxShadow: '0 30px 60px -12px rgba(0,0,0,0.9)' }}>
+                        <img 
+                          src={`${API_BASE}/video_feed?index=0`} 
+                          alt="Main Gate Cam" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                        />
+                        <div style={{ display: 'none', position: 'absolute', inset: 0, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.02)' }}>
+                          <Video size={48} style={{ color: 'var(--text-dim)', marginBottom: '16px' }} />
+                          <p style={{ fontSize: '12px', fontWeight: 900, color: 'var(--text-dim)', letterSpacing: '0.1em' }}>MAIN GATE FEED OFFLINE</p>
+                        </div>
+                        <div style={{ position: 'absolute', top: '20px', left: '20px', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(20px)', padding: '8px 20px', borderRadius: '12px', fontSize: '12px', fontWeight: 900, border: '1px solid rgba(255,255,255,0.1)', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ width: '8px', height: '8px', background: '#ef4444', borderRadius: '50%', boxShadow: '0 0 10px #ef4444' }}></div>
+                          LIVE • MAIN GATE ACCESS
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <StatusLine label="Camera Feed" />
-                    <StatusLine label="AI Detection" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px 64px', padding: '0 8px' }}>
+                    <StatusLine label="Camera Stream" />
+                    <StatusLine label="AI Core" />
                     <StatusLine label="Database" />
-                    <StatusLine label="Notifications" />
+                    <StatusLine label="Audio Alert" />
                   </div>
                 </div>
               </div>
@@ -325,11 +350,17 @@ function StatCard({ label, value, icon, colorClass, bgClass }) {
 function StatusLine({ label }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-green)' }} />
-        <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)' }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ 
+          width: '10px', 
+          height: '10px', 
+          borderRadius: '50%', 
+          background: 'var(--accent-green)',
+          boxShadow: '0 0 12px var(--accent-green)' 
+        }} />
+        <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.02em' }}>{label}</span>
       </div>
-      <span style={{ fontSize: '10px', fontWeight: 900, color: 'var(--accent-green)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Online</span>
+      <span style={{ fontSize: '12px', fontWeight: 900, color: 'var(--accent-green)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Online</span>
     </div>
   );
 }
@@ -346,9 +377,9 @@ function ThreatItem({ color, label, desc, active }) {
   );
 }
 
-function NavItem({ icon, label, active }) {
+function NavItem({ icon, label, active, onClick }) {
   return (
-    <div className={`nav-item ${active ? 'active' : ''}`}>
+    <div className={`nav-item ${active ? 'active' : ''}`} onClick={onClick} style={{ cursor: 'pointer' }}>
       <div className={active ? 'text-red' : ''}>{icon}</div>
       <span>{label}</span>
     </div>
